@@ -1,14 +1,38 @@
 import { useEffect, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import './App.css'
 
+type DspState = 'checking' | 'active' | 'inactive' | 'driver_missing' | 'error'
+
 function App() {
-  const [dspStatus, setDspStatus] = useState<'checking' | 'active' | 'inactive'>('checking')
+  const [dspStatus, setDspStatus] = useState<DspState>('checking')
+  const [version, setVersion] = useState('0.1.0-alpha')
 
   useEffect(() => {
-    // TODO: wire to Tauri backend DSP status command
-    // invoke('get_dsp_status').then(setDspStatus)
-    setTimeout(() => setDspStatus('inactive'), 800)
+    invoke<string>('get_dsp_status')
+      .then(s => setDspStatus(s as DspState))
+      .catch(() => setDspStatus('error'))
+
+    invoke<string>('get_version')
+      .then(setVersion)
+      .catch(() => {})
+
+    const interval = setInterval(() => {
+      invoke<string>('get_dsp_status')
+        .then(s => setDspStatus(s as DspState))
+        .catch(() => setDspStatus('error'))
+    }, 5000)
+
+    return () => clearInterval(interval)
   }, [])
+
+  const badgeLabel: Record<DspState, string> = {
+    checking:       'Checking...',
+    active:         'DSP active',
+    inactive:       'DSP inactive',
+    driver_missing: 'Install FxSound driver',
+    error:          'Error',
+  }
 
   return (
     <div className="app">
@@ -18,18 +42,17 @@ function App() {
           <span className="logo-by">by PrivacyChase</span>
         </div>
         <div className={`status-badge status-${dspStatus}`}>
-          {dspStatus === 'checking' && 'Checking DSP…'}
-          {dspStatus === 'active' && 'DSP active'}
-          {dspStatus === 'inactive' && 'DSP not connected'}
+          {badgeLabel[dspStatus]}
         </div>
       </header>
 
       <main className="app-main">
         <div className="alpha-notice">
-          <span className="alpha-tag">v0.1.0-alpha</span>
+          <span className="alpha-tag">v{version}</span>
           <p>
-            This is an early development build. The audio engine is being wired up.
-            No audio processing is active yet.
+            {dspStatus === 'active'
+              ? 'FxSound driver detected. Audio engine ready for Phase 1 wiring.'
+              : 'This is an early development build. The audio engine is being wired up. No audio processing is active yet.'}
           </p>
         </div>
 
@@ -39,8 +62,10 @@ function App() {
             <li className="done">✓ Project scaffolding</li>
             <li className="done">✓ Tauri shell + React UI</li>
             <li className="done">✓ GitHub Actions CI/CD</li>
-            <li className="wip">⟳ FxSound DSP wired to Rust backend</li>
-            <li className="wip">⟳ Audio passthrough confirmed</li>
+            <li className={dspStatus === 'active' ? 'done' : 'wip'}>
+              {dspStatus === 'active' ? '✓' : '⟳'} FxSound DSP driver detected
+            </li>
+            <li className="wip">⟳ DSP FFI wiring (Phase 1)</li>
             <li>◦ EQ visualizer + presets</li>
             <li>◦ Per-app audio profiles</li>
             <li>◦ Headphone auto-detection (AutoEQ)</li>
