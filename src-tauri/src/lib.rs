@@ -4,19 +4,59 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod audio;
+mod driver;
 mod dsp;
 mod eq;
+mod fxsound_bridge;
 mod privacy;
 mod profiles;
 
-use std::sync::Arc;
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use tauri::Manager;
 use serde::{Serialize, Deserialize};
 
-// Global shared audio state — lives for the lifetime of the app
 struct AppState {
-    shared: audio::SharedState,
-    engine_started: std::sync::atomic::AtomicBool,
+    eq_enabled: AtomicBool,
+    desser_enabled: AtomicBool,
+    volume_db: std::sync::Mutex<f64>,
+    driver_installed: AtomicBool,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            eq_enabled: AtomicBool::new(true),
+            desser_enabled: AtomicBool::new(true),
+            volume_db: std::sync::Mutex::new(0.0),
+            driver_installed: AtomicBool::new(false),
+        }
+    }
+}
+
+// ── Driver ────────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn install_driver(state: tauri::State<Arc<AppState>>) -> Result<String, String> {
+    match driver::ensure_driver_installed() {
+        Ok(installed) => {
+            state.driver_installed.store(true, Ordering::Relaxed);
+            if installed {
+                Ok("installed".to_string())
+            } else {
+                Ok("already_installed".to_string())
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+fn get_driver_status() -> String {
+    match driver::check_driver_installed() {
+        driver::DriverStatus::Installed    => "installed".to_string(),
+        driver::DriverStatus::NotInstalled => "not_installed".to_string(),
+        driver::DriverStatus::Error(e)     => format!("error:{e}"),
+    }
 }
 
 // ── DSP status ────────────────────────────────────────────────────────────────
@@ -26,47 +66,38 @@ fn get_dsp_status() -> String {
     dsp::get_status_string()
 }
 
-// ── Audio engine control ──────────────────────────────────────────────────────
+// ── EQ control ────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn start_audio_engine(state: tauri::State<Arc<AppState>>) -> Result<String, String> {
-    if state.engine_started.load(std::sync::atomic::Ordering::Relaxed) {
-        return Ok("already_running".to_string());
-    }
-
+fn set_eq_enabled(enabled: bool, state: tauri::State<Arc<AppState>>) -> Result<(), String> {
+    state.eq_enabled.store(enabled, Ordering::Relaxed);
     let profile = eq::beats_studio_pro_profile();
-    audio::start_engine(profile, state.shared.clone())?;
-    state.engine_started.store(true, std::sync::atomic::Ordering::Relaxed);
-    Ok("started".to_string())
-}
-
-#[tauri::command]
-fn stop_audio_engine(state: tauri::State<Arc<AppState>>) {
-    audio::stop_engine(&state.shared);
-    state.engine_started.store(false, std::sync::atomic::Ordering::Relaxed);
-}
-
-#[tauri::command]
-fn set_eq_enabled(enabled: bool, state: tauri::State<Arc<AppState>>) {
-    state.shared.eq_enabled.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    let vol = *state.volume_db.lock().unwrap();
+    fxsound_bridge::push_profile_to_fxsound(&profile.filters, profile.preamp_db, enabled, vol)
 }
 
 #[tauri::command]
 fn set_desser_enabled(enabled: bool, state: tauri::State<Arc<AppState>>) {
-    state.shared.desser_enabled.store(enabled, std::sync::atomic::Ordering::Relaxed);
+    state.desser_enabled.store(enabled, Ordering::Relaxed);
 }
 
 #[tauri::command]
-fn get_engine_status(state: tauri::State<Arc<AppState>>) -> audio::AudioEngineState {
-    audio::AudioEngineState {
-        running: state.engine_started.load(std::sync::atomic::Ordering::Relaxed),
-        eq_enabled: state.shared.eq_enabled.load(std::sync::atomic::Ordering::Relaxed),
-        desser_enabled: state.shared.desser_enabled.load(std::sync::atomic::Ordering::Relaxed),
-        ..Default::default()
-    }
+fn set_volume(db: f64, state: tauri::State<Arc<AppState>>) -> Result<(), String> {
+    *state.volume_db.lock().unwrap() = db;
+    let profile = eq::beats_studio_pro_profile();
+    let enabled = state.eq_enabled.load(Ordering::Relaxed);
+    fxsound_bridge::push_profile_to_fxsound(&profile.filters, profile.preamp_db, enabled, db)
 }
 
-// ── EQ profiles ───────────────────────────────────────────────────────────────
+#[tauri::command]
+fn apply_profile(state: tauri::State<Arc<AppState>>) -> Result<(), String> {
+    let profile = eq::beats_studio_pro_profile();
+    let enabled = state.eq_enabled.load(Ordering::Relaxed);
+    let vol = *state.volume_db.lock().unwrap();
+    fxsound_bridge::push_profile_to_fxsound(&profile.filters, profile.preamp_db, enabled, vol)
+}
+
+// ── Queries ───────────────────────────────────────────────────────────────────
 
 #[tauri::command]
 fn get_headphone_profiles() -> Vec<eq::HeadphoneProfile> {
@@ -78,8 +109,6 @@ fn get_active_profile() -> eq::HeadphoneProfile {
     eq::beats_studio_pro_profile()
 }
 
-// ── App profiles + presets ────────────────────────────────────────────────────
-
 #[tauri::command]
 fn get_app_profiles() -> Vec<profiles::AppProfile> {
     profiles::default_app_profiles()
@@ -89,8 +118,6 @@ fn get_app_profiles() -> Vec<profiles::AppProfile> {
 fn get_presets() -> Vec<profiles::Preset> {
     profiles::built_in_presets()
 }
-
-// ── Privacy + version ─────────────────────────────────────────────────────────
 
 #[tauri::command]
 fn get_privacy_log() -> Vec<String> {
@@ -108,17 +135,19 @@ struct EqState {
     active_profile: String,
     active_preset: String,
     desser_enabled: bool,
-    desser_strength: f64,
+    volume_db: f64,
+    driver_installed: bool,
 }
 
 #[tauri::command]
-fn get_eq_state() -> EqState {
+fn get_eq_state(state: tauri::State<Arc<AppState>>) -> EqState {
     EqState {
-        enabled: true,
+        enabled: state.eq_enabled.load(Ordering::Relaxed),
         active_profile: "Beats Studio Pro".to_string(),
         active_preset: "headphone".to_string(),
-        desser_enabled: true,
-        desser_strength: 1.2,
+        desser_enabled: state.desser_enabled.load(Ordering::Relaxed),
+        volume_db: *state.volume_db.lock().unwrap(),
+        driver_installed: state.driver_installed.load(Ordering::Relaxed),
     }
 }
 
@@ -127,21 +156,19 @@ fn get_eq_state() -> EqState {
 pub fn run() {
     env_logger::init();
 
-    let app_state = Arc::new(AppState {
-        shared: Arc::new(audio::SharedAudioState::new()),
-        engine_started: std::sync::atomic::AtomicBool::new(false),
-    });
+    let app_state = Arc::new(AppState::new());
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            install_driver,
+            get_driver_status,
             get_dsp_status,
-            start_audio_engine,
-            stop_audio_engine,
             set_eq_enabled,
             set_desser_enabled,
-            get_engine_status,
+            set_volume,
+            apply_profile,
             get_headphone_profiles,
             get_active_profile,
             get_app_profiles,
@@ -151,16 +178,26 @@ pub fn run() {
             get_eq_state,
         ])
         .setup(|app| {
-            // Auto-start the audio engine on launch
             let state = app.state::<Arc<AppState>>();
-            let profile = eq::beats_studio_pro_profile();
-            match audio::start_engine(profile, state.shared.clone()) {
-                Ok(_) => {
-                    state.engine_started.store(true, std::sync::atomic::Ordering::Relaxed);
-                    log::info!("Auris: audio engine started on launch");
+
+            // Check driver on launch, install if missing
+            std::thread::spawn({
+                let state = state.inner().clone();
+                move || {
+                    match driver::ensure_driver_installed() {
+                        Ok(_) => {
+                            state.driver_installed.store(true, Ordering::Relaxed);
+                            // Push EQ profile now that driver is confirmed
+                            let profile = eq::beats_studio_pro_profile();
+                            let _ = fxsound_bridge::push_profile_to_fxsound(
+                                &profile.filters, profile.preamp_db, true, 0.0
+                            );
+                            log::info!("Auris: driver ready, EQ profile pushed");
+                        }
+                        Err(e) => log::warn!("Auris: driver setup failed: {}", e),
+                    }
                 }
-                Err(e) => log::warn!("Auris: audio engine failed to start: {}", e),
-            }
+            });
 
             #[cfg(debug_assertions)]
             {
