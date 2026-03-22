@@ -10,9 +10,7 @@ use tauri::Manager;
 
 #[tauri::command]
 fn get_dsp_status() -> String {
-    // TODO Phase 0: wire to actual DSP state
-    // dsp::get_status()
-    "inactive".to_string()
+    dsp::get_status_string()
 }
 
 #[tauri::command]
