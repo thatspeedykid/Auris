@@ -8,7 +8,7 @@ When this is done, Auris is a working (if featureless) audio processor.
 
 ## Setup
 
-- [ ] Create GitHub repo `privacychase/auris` (public, AGPL v3)
+- [ ] Create GitHub repo `thatspeedykid/Auris` (public, AGPL v3)
 - [ ] Push this scaffold as the first commit on `main`
 - [ ] Create `dev` branch — all work happens here
 - [ ] Confirm GitHub Actions `build.yml` passes on first push

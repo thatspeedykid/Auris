@@ -26,7 +26,7 @@ Install these before anything else:
 ## Step 1 — Clone and install
 
 ```bash
-git clone https://github.com/privacychase/auris.git
+git clone https://github.com/thatspeedykid/Auris.git
 cd auris
 npm install
 ```

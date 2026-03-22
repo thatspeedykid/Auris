@@ -55,7 +55,7 @@ jobs:
           releaseBody: |
             ## Auris v${{ steps.version.outputs.VERSION }} — by PrivacyChase
 
-            See [CHANGELOG.md](https://github.com/privacychase/auris/blob/main/CHANGELOG.md) for what changed in this release.
+            See [CHANGELOG.md](https://github.com/thatspeedykid/Auris/blob/main/CHANGELOG.md) for what changed in this release.
 
             ### Downloads
             | File | Description |

@@ -1,0 +1,17 @@
+name: Auris
+description: Privacy-first audio enhancement for Windows — by PrivacyChase
+homepage: https://privacychase.com
+topics:
+  - audio
+  - windows
+  - tauri
+  - rust
+  - react
+  - privacy
+  - equalizer
+  - headphones
+  - fxsound
+  - open-source
+  - noise-suppression
+  - autoeq
+  - onnx

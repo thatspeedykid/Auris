@@ -6,7 +6,7 @@ Thank you for your interest in contributing. Auris is an open source project lic
 
 ## Before you start
 
-- Check [existing issues](https://github.com/privacychase/auris/issues) before opening a new one
+- Check [existing issues](https://github.com/thatspeedykid/Auris/issues) before opening a new one
 - For large features, open a Discussion first so we can align before you invest time building
 - All contributions must be compatible with AGPL v3.0 — do not introduce dependencies with incompatible licenses (MIT, Apache 2.0, and LGPL are fine; GPL v2-only is not)
 

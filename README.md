@@ -83,7 +83,7 @@ These are binding commitments for every release:
 
 ```bash
 # Clone the repo
-git clone https://github.com/privacychase/auris.git
+git clone https://github.com/thatspeedykid/Auris.git
 cd auris
 
 # Install JS dependencies
@@ -104,8 +104,8 @@ npm run tauri build
 
 Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
 
-- **Bug reports** → [GitHub Issues](https://github.com/privacychase/auris/issues)
-- **Feature requests** → [GitHub Discussions](https://github.com/privacychase/auris/discussions)
+- **Bug reports** → [GitHub Issues](https://github.com/thatspeedykid/Auris/issues)
+- **Feature requests** → [GitHub Discussions](https://github.com/thatspeedykid/Auris/discussions)
 - **Security issues** → see [SECURITY.md](SECURITY.md)
 
 ---
