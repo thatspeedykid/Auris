@@ -1,7 +1,7 @@
 [package]
 name = "auris"
 version = "0.1.0-alpha"
-description = "Auris — privacy-first audio enhancement by PrivacyChase"
+description = "Auris — Built by PrivacyChase, software that respects you."
 authors = ["PrivacyChase"]
 license = "AGPL-3.0"
 repository = "https://github.com/thatspeedykid/Auris"

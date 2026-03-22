@@ -131,5 +131,5 @@ This project is a fork of [FxSound](https://github.com/fxsound2/fxsound-app). Or
 ---
 
 <p align="center">
-  <sub>Auris — by <a href="https://privacychase.com">PrivacyChase</a> &nbsp;|&nbsp; Privacy is not a feature. It's the default.</sub>
+  <sub>Auris — by <a href="https://privacychase.com">PrivacyChase</a> &nbsp;|&nbsp; Built by PrivacyChase — software that respects you.</sub>
 </p>

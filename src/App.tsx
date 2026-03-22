@@ -53,7 +53,7 @@ function App() {
       <footer className="app-footer">
         <span>Privacy audit log: <strong>0 network calls</strong></span>
         <a
-          href="https://github.com/privacychase/auris"
+          href="https://github.com/thatspeedykid/Auris"
           target="_blank"
           rel="noopener noreferrer"
         >
