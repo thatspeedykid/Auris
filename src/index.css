@@ -1,0 +1,12 @@
+:root {
+  --auris-bg: #0e0e10;
+  --auris-surface: #111114;
+  --auris-border: #1f1f24;
+  --auris-text: #e8e8e8;
+  --auris-muted: #555;
+  --auris-accent: #818cf8;
+  --auris-green: #4ade80;
+  --auris-orange: #fb923c;
+}
+
+html, body { height: 100%; }
