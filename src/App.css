@@ -252,3 +252,15 @@ body {
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+
+/* Bypass overlay */
+.eq-viz { position: relative; }
+.eq-viz.bypassed { opacity: 0.4; }
+.bypass-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600; color: #52525b;
+  background: rgba(10,10,11,0.6);
+  border-radius: 10px; z-index: 1;
+  letter-spacing: 1px; text-transform: uppercase;
+}

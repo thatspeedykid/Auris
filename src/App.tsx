@@ -27,26 +27,29 @@ interface Preset {
   treble_db: number
 }
 
-interface EqState {
-  enabled: boolean
+interface EngineStatus {
+  running: boolean
+  sample_rate: number
+  buffer_size: number
   active_profile: string
-  active_preset: string
+  eq_enabled: boolean
   desser_enabled: boolean
-  desser_strength: number
+  latency_ms: number
 }
 
 function App() {
   const [dspStatus, setDspStatus] = useState<DspState>('checking')
   const [version, setVersion] = useState('0.1.0-alpha')
   const [activeProfile, setActiveProfile] = useState<HeadphoneProfile | null>(null)
-  const [profiles, setProfiles] = useState<HeadphoneProfile[]>([])
   const [presets, setPresets] = useState<Preset[]>([])
-  const [eqState, setEqState] = useState<EqState | null>(null)
+  const [activePreset, setActivePreset] = useState('headphone')
   const [activeTab, setActiveTab] = useState<'eq' | 'apps' | 'privacy'>('eq')
   const [eqEnabled, setEqEnabled] = useState(true)
   const [desserEnabled, setDesserEnabled] = useState(true)
+  const [engineRunning, setEngineRunning] = useState(false)
 
   useEffect(() => {
+    // Poll DSP status
     const poll = () => {
       invoke<string>('get_dsp_status').then(s => setDspStatus(s as DspState)).catch(() => setDspStatus('error'))
     }
@@ -55,29 +58,37 @@ function App() {
 
     invoke<string>('get_version').then(setVersion).catch(() => {})
     invoke<HeadphoneProfile>('get_active_profile').then(setActiveProfile).catch(() => {})
-    invoke<HeadphoneProfile[]>('get_headphone_profiles').then(setProfiles).catch(() => {})
     invoke<Preset[]>('get_presets').then(setPresets).catch(() => {})
-    invoke<EqState>('get_eq_state').then(s => {
-      setEqState(s)
-      setEqEnabled(s.enabled)
+
+    // Check engine status
+    invoke<EngineStatus>('get_engine_status').then(s => {
+      setEngineRunning(s.running)
+      setEqEnabled(s.eq_enabled)
       setDesserEnabled(s.desser_enabled)
     }).catch(() => {})
 
     return () => clearInterval(interval)
   }, [])
 
+  const handleEqToggle = async () => {
+    const next = !eqEnabled
+    setEqEnabled(next)
+    await invoke('set_eq_enabled', { enabled: next })
+  }
+
+  const handleDesserToggle = async () => {
+    const next = !desserEnabled
+    setDesserEnabled(next)
+    await invoke('set_desser_enabled', { enabled: next })
+  }
+
   const badgeLabel: Record<DspState, string> = {
     checking: 'Checking...', active: 'DSP active',
     inactive: 'DSP inactive', driver_missing: 'Install FxSound', error: 'Error',
   }
 
-  const filterColor = (gain: number) => {
-    if (gain > 0) return '#34d399'
-    if (gain < 0) return '#f87171'
-    return '#6b7280'
-  }
-
-  const barHeight = (gain: number) => Math.abs(gain) * 6 // px per dB
+  const filterColor = (gain: number) => gain > 0 ? '#34d399' : gain < 0 ? '#f87171' : '#6b7280'
+  const barHeight = (gain: number) => Math.abs(gain) * 6
 
   return (
     <div className="app">
@@ -98,20 +109,17 @@ function App() {
         <div className="profile-info">
           <span className="profile-name">{activeProfile?.name ?? 'Detecting headphones...'}</span>
           <span className="profile-sub">
-            {activeProfile ? `${activeProfile.filters.length} EQ filters · Preamp ${activeProfile.preamp_db} dB` : 'Connect headphones for auto-profile'}
+            {activeProfile
+              ? `${activeProfile.filters.length} EQ filters · Preamp ${activeProfile.preamp_db} dB · ${engineRunning ? '⬤ Processing' : '◦ Bypassed'}`
+              : 'Connect headphones for auto-profile'}
           </span>
         </div>
-        <div className="profile-toggle">
-          <button
-            className={`toggle-btn ${eqEnabled ? 'on' : 'off'}`}
-            onClick={() => {
-              setEqEnabled(e => !e)
-              invoke('set_eq_enabled', { enabled: !eqEnabled })
-            }}
-          >
-            {eqEnabled ? 'ON' : 'OFF'}
-          </button>
-        </div>
+        <button
+          className={`toggle-btn ${eqEnabled ? 'on' : 'off'}`}
+          onClick={handleEqToggle}
+        >
+          {eqEnabled ? 'ON' : 'OFF'}
+        </button>
       </div>
 
       {/* Tab bar */}
@@ -128,12 +136,15 @@ function App() {
       </div>
 
       <main className="app-main">
-        {/* EQ Tab */}
+
+        {/* ── EQ Tab ── */}
         {activeTab === 'eq' && (
           <div className="eq-panel">
+
             {/* EQ bar visualizer */}
             {activeProfile && activeProfile.filters.length > 0 && (
-              <div className="eq-viz">
+              <div className={`eq-viz ${!eqEnabled ? 'bypassed' : ''}`}>
+                {!eqEnabled && <div className="bypass-overlay">EQ Bypassed</div>}
                 <div className="eq-bars">
                   {activeProfile.filters.map((f, i) => (
                     <div key={i} className="eq-bar-col">
@@ -146,7 +157,9 @@ function App() {
                           <div className="eq-bar cut" style={{ height: barHeight(f.gain), background: filterColor(f.gain) }} />
                         )}
                       </div>
-                      <span className="eq-bar-label">{f.fc >= 1000 ? `${(f.fc/1000).toFixed(f.fc >= 10000 ? 0 : 1)}k` : `${f.fc}`}</span>
+                      <span className="eq-bar-label">
+                        {f.fc >= 1000 ? `${(f.fc/1000).toFixed(f.fc >= 10000 ? 0 : 1)}k` : `${f.fc}`}
+                      </span>
                       <span className="eq-bar-gain" style={{ color: filterColor(f.gain) }}>
                         {f.gain > 0 ? '+' : ''}{f.gain.toFixed(1)}
                       </span>
@@ -162,7 +175,8 @@ function App() {
               {presets.filter(p => p.name !== 'flat').map(p => (
                 <button
                   key={p.name}
-                  className={`preset-btn ${eqState?.active_preset === p.name ? 'active' : ''}`}
+                  className={`preset-btn ${activePreset === p.name ? 'active' : ''}`}
+                  onClick={() => setActivePreset(p.name)}
                   title={p.description}
                 >
                   {p.description}
@@ -174,11 +188,11 @@ function App() {
             <div className="desser-row">
               <div className="desser-info">
                 <span className="desser-title">De-esser</span>
-                <span className="desser-sub">Cuts harsh "shhh" sibilance on voices & YouTube (6–9 kHz)</span>
+                <span className="desser-sub">Kills harsh "shhh" sibilance on voices & YouTube (6–9 kHz)</span>
               </div>
               <button
                 className={`toggle-btn ${desserEnabled ? 'on' : 'off'}`}
-                onClick={() => setDesserEnabled(e => !e)}
+                onClick={handleDesserToggle}
               >
                 {desserEnabled ? 'ON' : 'OFF'}
               </button>
@@ -186,16 +200,16 @@ function App() {
           </div>
         )}
 
-        {/* Per-app Tab */}
+        {/* ── Per-App Tab ── */}
         {activeTab === 'apps' && (
           <div className="apps-panel">
-            <div className="section-label">App profiles — auto-switch when you change apps</div>
+            <div className="section-label">Auto-switch when you change apps</div>
             <div className="app-list">
               {[
-                { icon: '🌐', name: 'YouTube / Browser', sub: 'Chrome, Edge, Firefox', preset: 'Headphone EQ + De-esser ON', color: '#34d399' },
+                { icon: '🌐', name: 'YouTube / Browser', sub: 'Chrome · Edge · Firefox', preset: 'Headphone EQ + De-esser ON', color: '#34d399' },
                 { icon: '🎵', name: 'Spotify', sub: 'spotify.exe', preset: 'Headphone EQ · De-esser OFF', color: '#a3e635' },
                 { icon: '🎮', name: 'Games', sub: 'All other apps', preset: 'Gaming preset', color: '#60a5fa' },
-                { icon: '🎙', name: 'Discord', sub: 'discord.exe', preset: 'Voice preset + Aggressive de-esser', color: '#c084fc' },
+                { icon: '🎙', name: 'Discord', sub: 'discord.exe', preset: 'Voice + Aggressive de-esser', color: '#c084fc' },
               ].map((app, i) => (
                 <div key={i} className="app-row">
                   <span className="app-icon">{app.icon}</span>
@@ -207,11 +221,11 @@ function App() {
                 </div>
               ))}
             </div>
-            <div className="coming-soon">⟳ Auto-switching wires in Phase 2 — profiles are ready</div>
+            <div className="coming-soon">⟳ Auto-switching wires in Phase 3</div>
           </div>
         )}
 
-        {/* Privacy Tab */}
+        {/* ── Privacy Tab ── */}
         {activeTab === 'privacy' && (
           <div className="privacy-panel">
             <div className="privacy-score">
@@ -220,16 +234,16 @@ function App() {
             </div>
             <div className="privacy-list">
               {[
-                { check: true, label: 'No telemetry or crash reporting' },
-                { check: true, label: 'No analytics or usage tracking' },
-                { check: true, label: 'All EQ processing is 100% local' },
-                { check: true, label: 'No accounts or sign-in required' },
-                { check: true, label: 'Open source — AGPL v3.0' },
-                { check: false, label: 'Auto-update (opt-in, coming v1.0)' },
-              ].map((item, i) => (
+                [true,  'No telemetry or crash reporting'],
+                [true,  'No analytics or usage tracking'],
+                [true,  'All EQ processing is 100% local'],
+                [true,  'No accounts or sign-in required'],
+                [true,  'Open source — AGPL v3.0'],
+                [false, 'Auto-update (opt-in, coming v1.0)'],
+              ].map(([check, label], i) => (
                 <div key={i} className="privacy-row">
-                  <span className={item.check ? 'check-yes' : 'check-no'}>{item.check ? '✓' : '◦'}</span>
-                  <span>{item.label}</span>
+                  <span className={check ? 'check-yes' : 'check-no'}>{check ? '✓' : '◦'}</span>
+                  <span>{label as string}</span>
                 </div>
               ))}
             </div>
